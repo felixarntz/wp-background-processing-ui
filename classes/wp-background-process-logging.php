@@ -203,7 +203,9 @@ if ( ! class_exists( 'WP_Background_Process_Logging' ) ) {
 		}
 
 		private static function maybe_install_table() {
-			if ( ! is_admin() ) {
+			global $wpdb;
+
+			if ( ! is_admin() || ! current_user_can( 'manage_options' ) ) {
 				return;
 			}
 
@@ -212,18 +214,22 @@ if ( ! class_exists( 'WP_Background_Process_Logging' ) ) {
 				return;
 			}
 
-			$charset_collate = $this->get_charset_collate();
+			require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-			$sql = "CREATE TABLE IF NOT EXISTS $wpdb->background_process_logs (
+			$charset_collate = self::get_charset_collate();
+
+			$sql = "CREATE TABLE $wpdb->background_process_logs (
 	id bigint(20) unsigned NOT NULL auto_increment,
 	message text NOT NULL,
-	type varchar(20) NOT NULL,
+	type varchar(20) NOT NULL default 'success',
 	process_identifier varchar(64) NOT NULL,
 	process_key varchar(64) NOT NULL,
-	timestamp bigint(20) unsigned NOT NULL
-) $charset_collate;";
+	timestamp bigint(20) unsigned NOT NULL,
+	PRIMARY KEY  (id),
+	KEY process_identifier (process_identifier)
+) $charset_collate;\n";
 
-			dbDelta( $sql );
+			$r = dbDelta( $sql );
 
 			update_site_option( 'wp_background_process_logging_table_installed', '1' );
 		}

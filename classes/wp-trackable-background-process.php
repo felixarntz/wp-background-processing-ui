@@ -97,17 +97,8 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 			return substr( $unique, 0, $length );
 		}
 
-		public function get_nonce() {
-			return wp_create_nonce( $this->identifier );
-		}
-
 		public function enqueue_script( $progress_selector, $dispatch_button_selector ) {
 			$url = plugin_dir_url( dirname( __FILE__ ) ) . 'assets/wp-background-processing-ui.js';
-
-			$process_key = get_site_option( 'current_background_process_' . $this->identifier );
-			if ( ! $process_key ) {
-				$process_key = get_site_option( 'last_background_process_' . $this->identifier );
-			}
 
 			wp_enqueue_script( 'wp-background-processing-ui', $url, array(
 				'jquery',
@@ -117,7 +108,7 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 
 			wp_localize_script( 'wp-background-processing-ui', 'wpBackgroundProcessingUI', array(
 				'processIdentifier'				=> $this->identifier,
-				'processActive'					=> (bool) $process_key,
+				'processActive'					=> (bool) get_site_option( 'current_background_process_' . $this->identifier ),
 				'processNonce'					=> wp_create_nonce( $this->identifier ),
 				'l10n'							=> array(
 					'missingHeartbeat'				=> __( 'WP Heartbeat not loaded.', 'wp-background-processing-ui' ),
@@ -135,27 +126,27 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 		public function print_script_template() {
 			?>
 			<script type="text/html" id="tmpl-background-process-info">
-				<# if ( processInfo.key ) { #>
+				<# if ( ! _.isUndefined( data.processInfo.key ) ) { #>
 					<div class="progress-wrap">
 						<div class="progress">
-							<progress id="progressbar-total" max="100" value="{{ processInfo.percentage }}"></progress>
+							<progress id="progressbar-total" max="100" value="{{ data.processInfo.percentage }}"></progress>
 						</div>
 						<div class="status">
-							<span id="completed-total" class="completed">{{ processInfo.progress }}/{{ processInfo.total }}</span>
-							<span id="progress-total" class="progress">{{ processInfo.percentage }}%</span>
+							<span id="completed-total" class="completed">{{ data.processInfo.progress }}/{{ data.processInfo.total }}</span>
+							<span id="progress-total" class="progress">{{ data.processInfo.percentage }}%</span>
 						</div>
 					</div>
-					<# if ( processInfo.logs && processInfo.logs.length ) { #>
+					<# if ( ! _.isUndefined( data.processInfo.logs ) && data.processInfo.logs.length ) { #>
 						<div class="logs">
-							<# _.each( processInfo.logs, function( log ) {
+							<# _.each( data.processInfo.logs, function( log ) {
 								#>
 								<div id="log-{{ log.id }}" class="log log-{{ log.type }}">
-
+									<p>{{ log.message }}</p>
 								</div>
 								<#
 							}); #>
 						</div>
-						<# if ( hasMoreLogs ) { #>
+						<# if ( data.hasMoreLogs ) { #>
 							<button id="logs-more" class="logs-more button button-secondary"><?php _e( 'Show More', 'wp-background-processing-ui' ); ?></button>
 						<# } #>
 					<# } #>
@@ -196,10 +187,10 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 
 			if ( isset( $_REQUEST['afterTimestamp'] ) && $_REQUEST['afterTimestamp'] ) {
 				$args['timestamp'] = absint( $_REQUEST['afterTimestamp'] );
-				$args['timestamp'] = '>';
+				$args['timestamp_compare'] = '>';
 			} elseif ( isset( $_REQUEST['beforeTimestamp'] ) && $_REQUEST['beforeTimestamp'] ) {
 				$args['timestamp'] = absint( $_REQUEST['beforeTimestamp'] );
-				$args['timestamp'] = '<';
+				$args['timestamp_compare'] = '<';
 			}
 
 			$logs = WP_Background_Process_Logging::query( $args );
@@ -226,8 +217,9 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 
 			$args = array();
 			if ( isset( $data['backgroundProcessInfoLatestLogTimestamp'] ) && $data['backgroundProcessInfoLatestLogTimestamp'] ) {
+				$args['number'] = -1;
 				$args['timestamp'] = absint( $data['backgroundProcessInfoLatestLogTimestamp'] );
-				$args['timestamp'] = '>';
+				$args['timestamp_compare'] = '>';
 			} else {
 				$args['number'] = 25;
 			}

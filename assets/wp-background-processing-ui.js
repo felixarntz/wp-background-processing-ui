@@ -47,7 +47,14 @@
  					response.backgroundProcessInfo.logs = response.backgroundProcessInfo.logs.concat( data.processInfo.logs );
  				}
  				data.processInfo = response.backgroundProcessInfo;
- 				data.processInfo.percentage = parseInt( ( data.processInfo.progress / data.processInfo.total ) * 100, 10 );
+ 				if ( data.processInfo.progress === data.processInfo.total ) {
+ 					data.processActive = false;
+ 				}
+ 				if ( 0 === data.processInfo.total ) {
+ 					data.processInfo.percentage = 100;
+ 				} else {
+ 					data.processInfo.percentage = parseInt( ( data.processInfo.progress / data.processInfo.total ) * 100, 10 );
+ 				}
  				if ( 25 > data.processInfo.logs.length ) {
  					data.hasMoreLogs = false;
  				}
@@ -82,6 +89,8 @@
  				console.error( message );
  			});
  		});
+
+ 		ui.refreshContent();
 	};
 
 	ui.refreshButtonState = function() {
@@ -101,4 +110,6 @@
 
 		$( ui.selectors.progress ).html( ui.template( data ) )
 	};
+
+	ui.init();
 }( wpBackgroundProcessingUI, jQuery, wp ) );
