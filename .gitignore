@@ -48,5 +48,7 @@ tmp/
 temp/
 ._*
 .Trashes
+vendor/composer/*
+vendor/autoload.php
 
 .svn
