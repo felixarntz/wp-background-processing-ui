@@ -1,8 +1,8 @@
 ( function( ui, $, wp ) {
 	var data = {
 		processActive: ui.processActive,
-		processInfo: {},
-		hasMoreLogs: true
+		processInfo: ui.processInfo,
+		hasMoreLogs: ( ( ui.processInfo.logs && 25 > ui.processInfo.logs.length ) ? false : true )
 	};
 
 	ui.template = false;
@@ -20,11 +20,6 @@
 
  		if ( ! $( ui.selectors.progress ).length ) {
  			console.error( ui.l10n.invalidProgressSelector );
- 			return;
- 		}
-
- 		if ( ! $( ui.selectors.dispatchButton ).length ) {
- 			console.error( ui.l10n.invalidDispatchButtonSelector );
  			return;
  		}
 
@@ -60,18 +55,7 @@
  				}
  			}
 
- 			ui.refreshContent();
- 		});
-
- 		$( document ).on( 'click', ui.selectors.dispatchButton, function( e ) {
- 			wp.ajax.post( 'dispatch_background_process_' + ui.processIdentifier, {
- 				nonce: ui.processNonce
- 			}).done( function( response ) {
- 				data.processActive = true;
- 				ui.refreshButtonState();
- 			}).fail( function( message ) {
- 				console.error( message );
- 			});
+ 			$( document ).trigger( 'background_process_data_refresh', [ data ] );
  		});
 
  		$( document ).on( 'click', '#logs-more', function( e ) {
@@ -84,13 +68,36 @@
  				}
  				data.processInfo.logs = data.processInfo.logs.concat( response );
 
- 				ui.refreshContent();
+ 				$( document ).trigger( 'background_process_data_refresh', [ data ] );
  			}).fail( function( message ) {
  				console.error( message );
  			});
  		});
 
- 		ui.refreshContent();
+ 		$( document ).on( 'background_process_data_refresh', function( e ) {
+ 			ui.refreshContent();
+ 		});
+
+ 		$( document ).trigger( 'background_process_data_refresh', [ data ] );
+
+ 		if ( ! ui.selectors.dispatchButton || $( ui.selectors.dispatchButton ).length ) {
+ 			return;
+ 		}
+
+ 		$( document ).on( 'click', ui.selectors.dispatchButton, function( e ) {
+ 			wp.ajax.post( 'dispatch_background_process_' + ui.processIdentifier, {
+ 				nonce: ui.processNonce
+ 			}).done( function( response ) {
+ 				data.processActive = true;
+ 				ui.refreshButtonState();
+ 			}).fail( function( message ) {
+ 				console.error( message );
+ 			});
+ 		});
+
+ 		$( document ).on( 'background_process_data_refresh', function( e ) {
+ 			ui.refreshButtonState();
+ 		});
 	};
 
 	ui.refreshButtonState = function() {
@@ -102,8 +109,6 @@
 	};
 
 	ui.refreshContent = function() {
-		ui.refreshButtonState();
-
 		if ( ! ui.template ) {
 			ui.template = wp.template( 'background-process-info' );
 		}

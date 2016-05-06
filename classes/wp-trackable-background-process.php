@@ -106,15 +106,21 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 				'wp-util',
 			), '1.0.0', true );
 
+			$process_info_response = $this->maybe_send_process_info( array(), array(
+				'requestBackgroundProcessInfo'	=> $this->identifier,
+			), 0 );
+
+			$process_info = isset( $process_info_response['backgroundProcessInfo'] ) ? $process_info_response['backgroundProcessInfo'] : new stdClass();
+
 			wp_localize_script( 'wp-background-processing-ui', 'wpBackgroundProcessingUI', array(
 				'processIdentifier'				=> $this->identifier,
 				'processActive'					=> (bool) get_site_option( 'current_background_process_' . $this->identifier ),
+				'processInfo'					=> $process_info,
 				'processNonce'					=> wp_create_nonce( $this->identifier ),
 				'l10n'							=> array(
 					'missingHeartbeat'				=> __( 'WP Heartbeat not loaded.', 'wp-background-processing-ui' ),
 					'missingUtil'					=> __( 'WP Util not loaded.', 'wp-background-processing-ui' ),
 					'invalidProgressSelector'		=> sprintf( __( 'Could not find element %s.', 'wp-background-processing-ui' ), $progress_selector ),
-					'invalidDispatchButtonSelector'	=> sprintf( __( 'Could not find element %s.', 'wp-background-processing-ui' ), $dispatch_button_selector ),
 				),
 				'selectors'						=> array(
 					'progress'						=> $progress_selector,
