@@ -59,13 +59,15 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 					<# if ( ! _.isUndefined( data.processInfo.logs ) && data.processInfo.logs.length ) { #>
 						<div class="logs">
 							<h3><?php _e( 'Logs', 'wp-background-processing-ui' ); ?></h3>
-							<# _.each( data.processInfo.logs, function( log ) {
-								#>
-								<div id="log-{{ log.id }}" class="log log-{{ log.type }}">
-									<p>{{ log.message }}</p>
-								</div>
-								<#
-							}); #>
+							<ul>
+								<# _.each( data.processInfo.logs, function( log ) {
+									#>
+									<li id="log-{{ log.id }}" class="log log-{{ log.type }}">
+										<span>{{ log.message }}</span>
+									</li>
+									<#
+								}); #>
+							</ul>
 							<# if ( data.hasMoreLogs ) { #>
 								<button id="logs-more" class="logs-more button button-secondary"><?php _e( 'Show More', 'wp-background-processing-ui' ); ?></button>
 							<# } #>

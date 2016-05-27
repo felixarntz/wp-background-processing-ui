@@ -51,6 +51,12 @@
 	margin-top: 0;
 }
 
+.logs ul {
+	display: block;
+	max-height: 400px;
+	overflow-y: scroll;
+}
+
 .log {
 	margin-bottom: 1em;
 	padding: 5px 15px;
