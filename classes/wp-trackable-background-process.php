@@ -2,129 +2,43 @@
 
 if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 	abstract class WP_Trackable_Background_Process extends WP_Background_Process {
+		protected $keep_old_logs = false;
+
 		public function __construct() {
 			parent::__construct();
 
-			add_action( 'wp_ajax_dispatch_background_process_' . $this->identifier, array( $this, 'maybe_dispatch' ) );
+			add_action( 'wp_ajax_start_background_process_' . $this->identifier, array( $this, 'maybe_start' ) );
 			add_action( 'wp_ajax_get_background_process_' . $this->identifier . '_logs', array( $this, 'get_logs' ) );
+			add_action( 'wp_ajax_empty_old_background_process_' . $this->identifier . '_logs', array( $this, 'empty_old_logs' ) );
 			add_action( 'heartbeat_received', array( $this, 'maybe_send_process_info' ), 10, 3 );
 		}
 
-		public function dispatch() {
-			$status = $this->start();
-			if ( ! $status ) {
-				return false;
-			}
+		public function enqueue_script( $progress_selector, $start_button_selector, $empty_logs_button_selector = '#empty-logs' ) {
+			$baseurl = plugin_dir_url( dirname( __FILE__ ) ) . 'assets/';
 
-			parent::dispatch();
-
-			return true;
-		}
-
-		public function save() {
-			$total = 0;
-			if ( ! get_site_option( 'last_background_process_' . $this->identifier ) ) {
-				$total = get_site_option( 'background_process_' . $this->identifier . '_total', 0 );
-			} else {
-				$this->delete_old_process_info();
-			}
-
-			update_site_option( 'background_process_' . $this->identifier . '_total', $total + count( $this->data ) );
-
-			return parent::save();
-		}
-
-		protected function complete() {
-			$this->finish();
-
-			parent::complete();
-		}
-
-		protected function log( $message, $type = 'success' ) {
-			$progress = get_site_option( 'background_process_' . $this->identifier . '_progress', 0 );
-			update_site_option( 'background_process_' . $this->identifier . '_progress', $progress + 1 );
-
-			return WP_Background_Process_Logging::add( $message, $this->identifier, $type );
-		}
-
-		protected function start() {
-			if ( (bool) get_site_option( 'current_background_process_' . $this->identifier ) ) {
-				return false;
-			}
-
-			// Only keep old process info until the next process is started.
-			$this->delete_old_process_info();
-
-			$process_key = $this->generate_process_key();
-
-			update_site_option( 'current_background_process_' . $this->identifier, $process_key );
-
-			return true;
-		}
-
-		protected function finish() {
 			$process_key = get_site_option( 'current_background_process_' . $this->identifier );
-			if ( ! $process_key ) {
-				return false;
-			}
 
-			delete_site_option( 'current_background_process_' . $this->identifier );
-
-			update_site_option( 'last_background_process_' . $this->identifier, $process_key );
-
-			return true;
-		}
-
-		public function delete_old_process_info() {
-			$process_key = get_site_option( 'last_background_process_' . $this->identifier );
-			if ( ! $process_key ) {
-				return;
-			}
-
-			WP_Background_Process_Logging::delete( array(
-				'process_identifier'	=> $this->identifier,
-				'process_key'			=> $process_key,
-			) );
-
-			delete_site_option( 'background_process_' . $this->identifier . '_total' );
-			delete_site_option( 'background_process_' . $this->identifier . '_progress' );
-			delete_site_option( 'last_background_process_' . $this->identifier );
-		}
-
-		protected function generate_process_key( $length = 64 ) {
-			$unique = md5( microtime() . rand() );
-
-			return substr( $unique, 0, $length );
-		}
-
-		public function enqueue_script( $progress_selector, $dispatch_button_selector ) {
-			$url = plugin_dir_url( dirname( __FILE__ ) ) . 'assets/wp-background-processing-ui.js';
-
-			wp_enqueue_script( 'wp-background-processing-ui', $url, array(
+			wp_enqueue_style( 'wp-background-processing-ui', $baseurl . 'wp-background-processing-ui.css', array(), '1.0.0' );
+			wp_enqueue_script( 'wp-background-processing-ui', $baseurl . 'wp-background-processing-ui.js', array(
 				'jquery',
 				'heartbeat',
 				'wp-util',
 			), '1.0.0', true );
 
-			$process_info_response = $this->maybe_send_process_info( array(), array(
-				'requestBackgroundProcessInfo'	=> $this->identifier,
-			), 0 );
-
-			$process_info = isset( $process_info_response['backgroundProcessInfo'] ) ? $process_info_response['backgroundProcessInfo'] : new stdClass();
-
 			wp_localize_script( 'wp-background-processing-ui', 'wpBackgroundProcessingUI', array(
 				'processIdentifier'				=> $this->identifier,
-				'processActive'					=> (bool) get_site_option( 'current_background_process_' . $this->identifier ),
-				'processInfo'					=> $process_info,
+				'processActive'					=> (bool) $process_key,
 				'processNonce'					=> wp_create_nonce( $this->identifier ),
 				'l10n'							=> array(
 					'missingHeartbeat'				=> __( 'WP Heartbeat not loaded.', 'wp-background-processing-ui' ),
 					'missingUtil'					=> __( 'WP Util not loaded.', 'wp-background-processing-ui' ),
 					'invalidProgressSelector'		=> sprintf( __( 'Could not find element %s.', 'wp-background-processing-ui' ), $progress_selector ),
+					'invalidStartButtonSelector'	=> sprintf( __( 'Could not find element %s.', 'wp-background-processing-ui' ), $start_button_selector ),
 				),
 				'selectors'						=> array(
 					'progress'						=> $progress_selector,
-					'dispatchButton'				=> $dispatch_button_selector,
+					'startButton'					=> $start_button_selector,
+					'emptyLogsButton'				=> $empty_logs_button_selector,
 				),
 			) );
 		}
@@ -134,16 +48,17 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 			<script type="text/html" id="tmpl-background-process-info">
 				<# if ( ! _.isUndefined( data.processInfo.key ) ) { #>
 					<div class="progress-wrap">
-						<div class="progress">
+						<div class="progress-bar">
 							<progress id="progressbar-total" max="100" value="{{ data.processInfo.percentage }}"></progress>
 						</div>
 						<div class="status">
 							<span id="completed-total" class="completed">{{ data.processInfo.progress }}/{{ data.processInfo.total }}</span>
-							<span id="progress-total" class="progress">{{ data.processInfo.percentage }}%</span>
+							<span id="progress-total" class="progress">({{ data.processInfo.percentage }}%)</span>
 						</div>
 					</div>
 					<# if ( ! _.isUndefined( data.processInfo.logs ) && data.processInfo.logs.length ) { #>
 						<div class="logs">
+							<h3><?php _e( 'Logs', 'wp-background-processing-ui' ); ?></h3>
 							<# _.each( data.processInfo.logs, function( log ) {
 								#>
 								<div id="log-{{ log.id }}" class="log log-{{ log.type }}">
@@ -151,17 +66,17 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 								</div>
 								<#
 							}); #>
+							<# if ( data.hasMoreLogs ) { #>
+								<button id="logs-more" class="logs-more button button-secondary"><?php _e( 'Show More', 'wp-background-processing-ui' ); ?></button>
+							<# } #>
 						</div>
-						<# if ( data.hasMoreLogs ) { #>
-							<button id="logs-more" class="logs-more button button-secondary"><?php _e( 'Show More', 'wp-background-processing-ui' ); ?></button>
-						<# } #>
 					<# } #>
 				<# } #>
 			</script>
 			<?php
 		}
 
-		public function maybe_dispatch() {
+		public function maybe_start() {
 			if ( ! isset( $_REQUEST['nonce'] ) ) {
 				wp_send_json_error( __( 'Missing nonce.', 'wp-background-processing-ui' ) );
 			}
@@ -170,7 +85,7 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 				wp_send_json_error( __( 'Invalid nonce.', 'wp-background-processing-ui' ) );
 			}
 
-			$status = $this->dispatch();
+			$status = $this->start();
 			if ( ! $status ) {
 				wp_send_json_error( __( 'Process not started.', 'wp-background-processing-ui' ) );
 			}
@@ -187,21 +102,41 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 				wp_send_json_error( __( 'Invalid nonce.', 'wp-background-processing-ui' ) );
 			}
 
+			if ( ! isset( $_REQUEST['key'] ) ) {
+				wp_send_json_error( __( 'Missing process key.', 'wp-background-processing-ui' ) );
+			}
+
 			$args = array(
-				'number'	=> 25,
+				'number'				=> 25,
+				'process_identifier'	=> $this->identifier,
+				'process_key'			=> wp_unslash( $_REQUEST['key'] ),
 			);
 
-			if ( isset( $_REQUEST['afterTimestamp'] ) && $_REQUEST['afterTimestamp'] ) {
-				$args['timestamp'] = absint( $_REQUEST['afterTimestamp'] );
-				$args['timestamp_compare'] = '>';
-			} elseif ( isset( $_REQUEST['beforeTimestamp'] ) && $_REQUEST['beforeTimestamp'] ) {
-				$args['timestamp'] = absint( $_REQUEST['beforeTimestamp'] );
-				$args['timestamp_compare'] = '<';
+			if ( isset( $_REQUEST['afterId'] ) && $_REQUEST['afterId'] ) {
+				$args['id'] = absint( $_REQUEST['afterId'] );
+				$args['id_compare'] = '>';
+			} elseif ( isset( $_REQUEST['beforeId'] ) && $_REQUEST['beforeId'] ) {
+				$args['id'] = absint( $_REQUEST['beforeId'] );
+				$args['id_compare'] = '<';
 			}
 
 			$logs = WP_Background_Process_Logging::query( $args );
 
 			wp_send_json_success( $logs );
+		}
+
+		public function empty_old_logs() {
+			if ( ! isset( $_REQUEST['nonce'] ) ) {
+				wp_send_json_error( __( 'Missing nonce.', 'wp-background-processing-ui' ) );
+			}
+
+			if ( ! check_ajax_referer( $this->identifier, 'nonce', false ) ) {
+				wp_send_json_error( __( 'Invalid nonce.', 'wp-background-processing-ui' ) );
+			}
+
+			$this->delete_old_process_info();
+
+			wp_send_json_success( __( 'Logs emptied.', 'wp-background-processing-ui' ) );
 		}
 
 		public function maybe_send_process_info( $response, $data, $screen_id ) {
@@ -221,11 +156,14 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 				}
 			}
 
-			$args = array();
-			if ( isset( $data['backgroundProcessInfoLatestLogTimestamp'] ) && $data['backgroundProcessInfoLatestLogTimestamp'] ) {
+			$args = array(
+				'process_identifier'	=> $this->identifier,
+				'process_key'			=> $process_key,
+			);
+			if ( isset( $data['backgroundProcessInfoLatestLogId'] ) && $data['backgroundProcessInfoLatestLogId'] ) {
 				$args['number'] = -1;
-				$args['timestamp'] = absint( $data['backgroundProcessInfoLatestLogTimestamp'] );
-				$args['timestamp_compare'] = '>';
+				$args['id'] = absint( $data['backgroundProcessInfoLatestLogId'] );
+				$args['id_compare'] = '>';
 			} else {
 				$args['number'] = 25;
 			}
@@ -243,6 +181,94 @@ if ( ! class_exists( 'WP_Trackable_Background_Process' ) ) {
 			$response['backgroundProcessInfo'] = $process_info;
 
 			return $response;
+		}
+
+		public function get_nonce() {
+			return wp_create_nonce( $this->identifier );
+		}
+
+		protected function start() {
+			if ( (bool) get_site_option( 'current_background_process_' . $this->identifier ) ) {
+				return false;
+			}
+
+			// Only keep old process info until the next process is started.
+			$this->delete_old_process_info();
+
+			$process_key = $this->generate_process_key();
+
+			update_site_option( 'current_background_process_' . $this->identifier, $process_key );
+
+			$this->before_start();
+
+			$this->dispatch();
+
+			return true;
+		}
+
+		protected function finish() {
+			$process_key = get_site_option( 'current_background_process_' . $this->identifier );
+			if ( ! $process_key ) {
+				return false;
+			}
+
+			delete_site_option( 'current_background_process_' . $this->identifier );
+
+			update_site_option( 'last_background_process_' . $this->identifier, $process_key );
+
+			return true;
+		}
+
+		protected function complete() {
+			$this->finish();
+
+			parent::complete();
+		}
+
+		protected function log( $message, $type = 'success' ) {
+			return WP_Background_Process_Logging::add( $message, $this->identifier, $type );
+		}
+
+		protected function increase_progress( $number = 1 ) {
+			$progress = get_site_option( 'background_process_' . $this->identifier . '_progress', 0 );
+			update_site_option( 'background_process_' . $this->identifier . '_progress', $progress + $number );
+		}
+
+		protected function increase_total( $number = 0 ) {
+			if ( ! $number ) {
+				$number = count( $this->data );
+			}
+
+			$total = get_site_option( 'background_process_' . $this->identifier . '_total', 0 );
+			update_site_option( 'background_process_' . $this->identifier . '_total', $total + $number );
+		}
+
+		protected function delete_old_process_info() {
+			$process_key = get_site_option( 'last_background_process_' . $this->identifier );
+			if ( ! $process_key ) {
+				return;
+			}
+
+			if ( ! $this->keep_old_logs ) {
+				WP_Background_Process_Logging::delete( array(
+					'process_identifier'	=> $this->identifier,
+					'process_key'			=> $process_key,
+				) );
+			}
+
+			delete_site_option( 'background_process_' . $this->identifier . '_total' );
+			delete_site_option( 'background_process_' . $this->identifier . '_progress' );
+			delete_site_option( 'last_background_process_' . $this->identifier );
+		}
+
+		protected function generate_process_key( $length = 64 ) {
+			$unique = md5( microtime() . rand() );
+
+			return substr( $unique, 0, $length );
+		}
+
+		protected function before_start() {
+			// empty
 		}
 	}
 }

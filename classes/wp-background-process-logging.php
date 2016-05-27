@@ -2,8 +2,6 @@
 
 if ( ! class_exists( 'WP_Background_Process_Logging' ) ) {
 	class WP_Background_Process_Logging {
-		private static $initialized = false;
-
 		public static function add( $message, $process_identifier, $type = 'success', $process_key = null, $timestamp = null ) {
 			global $wpdb;
 
@@ -35,7 +33,7 @@ if ( ! class_exists( 'WP_Background_Process_Logging' ) ) {
 			$args = wp_parse_args( $args, array(
 				'number'	=> 10,
 				'offset'	=> 0,
-				'orderby'	=> 'timestamp',
+				'orderby'	=> 'id',
 				'order'		=> 'DESC',
 				'fields'	=> 'all',
 			) );
@@ -178,11 +176,6 @@ if ( ! class_exists( 'WP_Background_Process_Logging' ) ) {
 		}
 
 		public static function init() {
-			if ( self::$initialized ) {
-				return;
-			}
-			self::$initialized = true;
-
 			self::register_table();
 			self::maybe_install_table();
 		}
